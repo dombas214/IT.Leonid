@@ -137,9 +137,134 @@ body{background:var(--bg)}
 <footer class="wrap footer"><a class="brand" href="#top"><span class="monogram">ЛС</span><span><strong>ЛЕОНИД СЕРГЕЕВИЧ ВОЛКОВ</strong><small>Создание сайтов</small></span></a><span>© <span id="year"></span> Леонид Сергеевич Волков</span><div class="footer-links"><a href="#services">Услуги</a><a data-open-form="" href="#contact">Связаться</a></div></footer>
 
 <script>
-const form=document.getElementById('project-form'),message=document.getElementById('form-message'),success=document.getElementById('success-state');document.getElementById('year').textContent=new Date().getFullYear();
-document.querySelectorAll('[data-open-form]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();document.getElementById('request').scrollIntoView({behavior:'smooth'});setTimeout(()=>document.getElementById('name').focus({preventScroll:true}),450)}));document.getElementById('success-close').addEventListener('click',()=>{success.classList.remove('show');form.style.display='';form.reset();message.textContent=''});
-form.addEventListener('submit',async e=>{e.preventDefault();message.textContent='';let first=null;['name','contact-way','details'].forEach(id=>{const field=document.getElementById(id);if(!field.value.trim()){field.setAttribute('aria-invalid','true');first=first||field}else field.removeAttribute('aria-invalid')});if(first){message.textContent='Заполните обязательные поля.';first.focus();return}if(!document.getElementById('consent').checked){message.textContent='Подтвердите согласие на обработку данных.';return}const submitButton=form.querySelector('button[type=submit]');const originalButtonText=submitButton.innerHTML;submitButton.disabled=true;submitButton.style.opacity='.65';message.textContent='Отправляем заявку…';try{const response=await fetch('/api/telegram',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('name').value,contact:document.getElementById('contact-way').value,projectType:document.getElementById('project-type').value,details:document.getElementById('details').value})});const result=await response.json().catch(()=>({}));if(!response.ok||!result.ok)throw new Error('send_failed');form.style.display='none';message.textContent='';success.classList.add('show')}catch(error){message.textContent='Не удалось отправить заявку. Попробуйте ещё раз позже.'}finally{submitButton.disabled=false;submitButton.style.opacity='';submitButton.innerHTML=originalButtonText}});
-const revealItems=[...document.querySelectorAll('.reveal')];revealItems.forEach((el,i)=>{const siblings=[...el.parentElement.children].filter(node=>node.classList&&node.classList.contains('reveal'));el.style.setProperty('--reveal-delay',Math.min(siblings.indexOf(el),5)*65+'ms')});const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){entry.target.classList.add('visible');observer.unobserve(entry.target)}}),{threshold:.08,rootMargin:'0px 0px -35px 0px'});revealItems.forEach(el=>observer.observe(el));
-// Telegram-форма отправляет данные в Cloudflare Pages Function; секреты не хранятся в браузере.
+const form = document.getElementById('project-form');
+const message = document.getElementById('form-message');
+const success = document.getElementById('success-state');
+document.getElementById('year').textContent = new Date().getFullYear();
+
+const errorMessages = {
+  server_not_configured: 'На сервере не найдены TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID. Проверьте переменные в Cloudflare и заново запустите деплой.',
+  telegram_token_invalid: 'Telegram отклонил токен бота. Проверьте TELEGRAM_BOT_TOKEN в Cloudflare.',
+  telegram_chat_not_found: 'Telegram не нашёл чат. Проверьте TELEGRAM_CHAT_ID. Для личного чата сначала откройте бота и отправьте ему /start.',
+  telegram_start_required: 'Сначала откройте своего бота в Telegram и отправьте ему /start, затем попробуйте снова.',
+  telegram_no_chat_permission: 'У бота нет разрешения писать в этот чат. Добавьте бота в нужный чат и проверьте его права.',
+  telegram_rate_limited: 'Telegram временно ограничил отправку. Подождите немного и попробуйте снова.',
+  telegram_rejected: 'Telegram отклонил заявку. Проверьте токен, ID чата и права бота.',
+  telegram_unavailable: 'Cloudflare не смог связаться с Telegram. Попробуйте позже.',
+  required_fields_missing: 'Заполните все обязательные поля.',
+  request_too_large: 'Сообщение слишком большое. Сократите описание задачи.',
+  invalid_json: 'Не удалось прочитать данные формы. Обновите страницу и попробуйте снова.'
+};
+
+// Переход к форме по кнопкам сайта.
+document.querySelectorAll('[data-open-form]').forEach((el) => {
+  el.addEventListener('click', (event) => {
+    event.preventDefault();
+    document.getElementById('request').scrollIntoView({ behavior: 'smooth' });
+    setTimeout(() => document.getElementById('name').focus({ preventScroll: true }), 450);
+  });
+});
+
+document.getElementById('success-close').addEventListener('click', () => {
+  success.classList.remove('show');
+  form.style.display = '';
+  form.reset();
+  message.textContent = '';
+});
+
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  message.textContent = '';
+
+  const nameField = document.getElementById('name');
+  const contactField = document.getElementById('contact-way');
+  const detailsField = document.getElementById('details');
+  const requiredFields = [nameField, contactField, detailsField];
+  const firstInvalid = requiredFields.find((field) => !field.value.trim());
+
+  requiredFields.forEach((field) => {
+    if (!field.value.trim()) field.setAttribute('aria-invalid', 'true');
+    else field.removeAttribute('aria-invalid');
+  });
+
+  if (firstInvalid) {
+    message.textContent = 'Заполните обязательные поля.';
+    firstInvalid.focus();
+    return;
+  }
+  if (!document.getElementById('consent').checked) {
+    message.textContent = 'Подтвердите согласие на обработку данных.';
+    return;
+  }
+
+  const submitButton = form.querySelector('button[type="submit"]');
+  const originalButtonText = submitButton.innerHTML;
+  submitButton.disabled = true;
+  submitButton.innerHTML = 'Отправляем…';
+  message.textContent = 'Отправляем заявку…';
+
+  try {
+    const response = await fetch('/api/telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({
+        name: nameField.value.trim(),
+        contact: contactField.value.trim(),
+        projectType: document.getElementById('project-type').value,
+        details: detailsField.value.trim()
+      })
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      if (response.status === 404) {
+        throw new Error('function_not_deployed');
+      }
+      throw new Error('unexpected_server_response');
+    }
+
+    const result = await response.json();
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || 'telegram_unavailable');
+    }
+
+    form.style.display = 'none';
+    message.textContent = '';
+    success.classList.add('show');
+  } catch (error) {
+    const code = error.message || 'telegram_unavailable';
+    if (code === 'function_not_deployed') {
+      message.textContent = 'Cloudflare не нашёл функцию /api/telegram. Проверьте, что папки functions и volkov_site находятся рядом в корне GitHub-репозитория, а Build output directory задан как volkov_site. Затем выполните новый деплой через GitHub.';
+    } else if (code === 'unexpected_server_response') {
+      message.textContent = 'Сервер вернул неожиданный ответ. Проверьте последний деплой Cloudflare Pages.';
+    } else {
+      message.textContent = errorMessages[code] || 'Не удалось отправить заявку. Проверьте деплой Cloudflare Pages и повторите попытку.';
+    }
+    console.error('Form submit failed:', code);
+  } finally {
+    submitButton.disabled = false;
+    submitButton.innerHTML = originalButtonText;
+  }
+});
+
+// Плавное появление блоков при прокрутке.
+const revealItems = [...document.querySelectorAll('.reveal')];
+revealItems.forEach((el) => {
+  const siblings = [...el.parentElement.children].filter((node) => node.classList && node.classList.contains('reveal'));
+  el.style.setProperty('--reveal-delay', `${Math.min(siblings.indexOf(el), 5) * 65}ms`);
+});
+if ('IntersectionObserver' in window) {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -35px 0px' });
+  revealItems.forEach((el) => observer.observe(el));
+} else {
+  revealItems.forEach((el) => el.classList.add('visible'));
+}
 </script></body></html>
