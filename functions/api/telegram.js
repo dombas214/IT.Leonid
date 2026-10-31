@@ -2,7 +2,7 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: {
     "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
+    "Cache-Control": "no-store, max-age=0",
     "X-Content-Type-Options": "nosniff",
   },
 });
@@ -16,26 +16,40 @@ function cleanText(value, maxLength) {
     .slice(0, maxLength);
 }
 
-function telegramErrorCode(status, description) {
+function getTelegramErrorCode(status, description) {
   const text = String(description || "").toLowerCase();
   if (status === 401 || text.includes("unauthorized")) return "telegram_token_invalid";
+  if (text.includes("chat not found") || text.includes("peer_id_invalid")) {
+    return "telegram_chat_not_found";
+  }
+  if (text.includes("can't initiate") || text.includes("can’t initiate")) {
+    return "telegram_start_required";
+  }
   if (
-    text.includes("chat not found") ||
-    text.includes("peer_id_invalid") ||
-    text.includes("user not found")
-  ) return "telegram_chat_not_found";
-  if (
-    text.includes("can't initiate") ||
-    text.includes("can\u2019t initiate") ||
-    text.includes("blocked by user")
-  ) return "telegram_start_required";
-  if (
+    text.includes("blocked by the user") ||
+    text.includes("bot was blocked") ||
     text.includes("not enough rights") ||
     text.includes("not a member") ||
     text.includes("bot was kicked")
-  ) return "telegram_no_chat_permission";
+  ) {
+    return "telegram_no_chat_permission";
+  }
   if (status === 429) return "telegram_rate_limited";
   return "telegram_rejected";
+}
+
+// Диагностика: откройте https://ВАШ-ДОМЕН/api/telegram после деплоя.
+// Возвращаются только логические статусы; токен и ID чата не раскрываются.
+export async function onRequestGet({ env }) {
+  const tokenConfigured = Boolean(String(env.TELEGRAM_BOT_TOKEN || "").trim());
+  const chatConfigured = Boolean(String(env.TELEGRAM_CHAT_ID || "").trim());
+  return json({
+    ok: true,
+    service: "telegram-form",
+    tokenConfigured,
+    chatConfigured,
+    ready: tokenConfigured && chatConfigured,
+  });
 }
 
 export async function onRequestPost({ request, env }) {
@@ -44,6 +58,11 @@ export async function onRequestPost({ request, env }) {
 
   if (!botToken || !chatId) {
     return json({ ok: false, error: "server_not_configured" }, 500);
+  }
+
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return json({ ok: false, error: "invalid_content_type" }, 415);
   }
 
   const contentLength = Number(request.headers.get("content-length") || 0);
@@ -114,8 +133,7 @@ export async function onRequestPost({ request, env }) {
     }
 
     if (!telegramResponse.ok || !telegramResult?.ok) {
-      const code = telegramErrorCode(telegramResponse.status, telegramResult?.description);
-      // The description is kept in server logs only; never return the bot token or API URL.
+      const code = getTelegramErrorCode(telegramResponse.status, telegramResult?.description);
       console.error("Telegram sendMessage failed", {
         status: telegramResponse.status,
         errorCode: code,
@@ -124,7 +142,7 @@ export async function onRequestPost({ request, env }) {
       return json({ ok: false, error: code }, 502);
     }
 
-    return json({ ok: true });
+    return json({ ok: true, message: "sent" });
   } catch (error) {
     console.error("Telegram request failed", String(error?.message || error).slice(0, 300));
     return json({ ok: false, error: "telegram_unavailable" }, 502);
