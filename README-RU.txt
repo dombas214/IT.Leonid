@@ -41,9 +41,9 @@ https://ВАШ-САЙТ.pages.dev/api/telegram
 {"ok":true,"service":"telegram-form","tokenConfigured":true,"chatConfigured":true,"ready":true}
 
 Если получаете 404 — функция не опубликована: проверьте GitHub-деплой, расположение functions в корне и то, что это Pages Git integration, а не Direct Upload.
-Если tokenConfigured или chatConfigured равно false — секрет/переменная не привязаны к тому окружению, которое вы проверяете. Добавьте их в Production и сделайте новый деплой.
+Если tokenConfigured или chatConfigured равно false — секрет/переменная не привязаны к тому окружению, которое вы проверяете. Если tokenValid=false — сам токен недействителен. Если chatAccessible=false — новый бот не видит указанный чат или TELEGRAM_CHAT_ID указан неверно. Добавьте их в Production и сделайте новый деплой.
 
 После успешной проверки GET откройте бота в Telegram и отправьте ему /start (для личного чата), затем заполните форму на сайте.
-Если Telegram отклонит сообщение, форма покажет причину, а подробности появятся в Cloudflare → Workers & Pages → ваш Pages-проект → Functions → Logs.
+Диагностика GET теперь проверяет реальный токен через Telegram getMe и доступ к целевому чату через getChat. В ответе tokenValid должен быть true, а chatAccessible должен быть true. Если tokenValid=false — проверьте новый токен. Если chatAccessible=false — проверьте TELEGRAM_CHAT_ID: это ID личного чата/группы, а не ID бота; для личного чата откройте нового бота и отправьте /start. Если Telegram отклонит отправку заявки, форма покажет причину, а подробности появятся в Cloudflare → Workers & Pages → ваш Pages-проект → Functions → Logs.
 
 ВАЖНО: этот проект никогда не содержит ваш токен. Токен остаётся только в Cloudflare Secret.

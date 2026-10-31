@@ -144,9 +144,9 @@ document.getElementById('year').textContent = new Date().getFullYear();
 
 const errorMessages = {
   server_not_configured: 'На сервере не найдены TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID. Проверьте переменные в Cloudflare и заново запустите деплой.',
-  telegram_token_invalid: 'Telegram отклонил токен бота. Проверьте TELEGRAM_BOT_TOKEN в Cloudflare.',
-  telegram_chat_not_found: 'Telegram не нашёл чат. Проверьте TELEGRAM_CHAT_ID. Для личного чата сначала откройте бота и отправьте ему /start.',
-  telegram_start_required: 'Сначала откройте своего бота в Telegram и отправьте ему /start, затем попробуйте снова.',
+  telegram_token_invalid: 'Новый токен не прошёл проверку Telegram. Вставьте в TELEGRAM_BOT_TOKEN полный токен от BotFather без пробелов и выполните новый Production-деплой.',
+  telegram_chat_not_found: 'Telegram не нашёл чат. TELEGRAM_CHAT_ID — это ID вашего личного чата или группы, а не ID самого бота. Откройте нового бота и отправьте /start.',
+  telegram_start_required: 'Откройте именно нового бота, отправьте ему /start и затем повторите отправку заявки.',
   telegram_no_chat_permission: 'У бота нет разрешения писать в этот чат. Добавьте бота в нужный чат и проверьте его права.',
   telegram_rate_limited: 'Telegram временно ограничил отправку. Подождите немного и попробуйте снова.',
   telegram_rejected: 'Telegram отклонил заявку. Проверьте токен, ID чата и права бота.',
@@ -237,7 +237,7 @@ form.addEventListener('submit', async (event) => {
   } catch (error) {
     const code = error && error.message ? error.message : 'telegram_unavailable';
     if (code === 'function_not_deployed') {
-      message.textContent = 'Cloudflare не нашёл функцию /api/telegram. Проверьте, что папки functions и volkov_site находятся рядом в корне GitHub-репозитория, а Build output directory задан как volkov_site. Затем выполните новый деплой через GitHub.';
+      message.textContent = 'Cloudflare не нашёл функцию /api/telegram. Проверьте, что папки functions и public находятся рядом в корне GitHub-репозитория, а Build output directory задан как public. Затем выполните новый деплой через GitHub.';
     } else if (code === 'unexpected_server_response') {
       message.textContent = 'Сервер вернул неожиданный ответ. Проверьте последний деплой Cloudflare Pages.';
     } else if (code === 'Failed to fetch' || code === 'NetworkError when attempting to fetch resource.') {

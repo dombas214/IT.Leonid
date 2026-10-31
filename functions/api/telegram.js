@@ -19,9 +19,11 @@ function cleanText(value, maxLength) {
 function getTelegramErrorCode(status, description) {
   const text = String(description || "").toLowerCase();
   if (status === 401 || text.includes("unauthorized")) return "telegram_token_invalid";
-  if (text.includes("chat not found") || text.includes("peer_id_invalid")) {
-    return "telegram_chat_not_found";
-  }
+  if (
+    text.includes("chat not found") ||
+    text.includes("peer_id_invalid") ||
+    text.includes("chat_id_invalid")
+  ) return "telegram_chat_not_found";
   if (text.includes("can't initiate") || text.includes("can’t initiate")) {
     return "telegram_start_required";
   }
@@ -30,26 +32,101 @@ function getTelegramErrorCode(status, description) {
     text.includes("bot was blocked") ||
     text.includes("not enough rights") ||
     text.includes("not a member") ||
-    text.includes("bot was kicked")
-  ) {
-    return "telegram_no_chat_permission";
-  }
+    text.includes("bot was kicked") ||
+    text.includes("chat_write_forbidden") ||
+    text.includes("have no rights to send")
+  ) return "telegram_no_chat_permission";
   if (status === 429) return "telegram_rate_limited";
   return "telegram_rejected";
 }
 
-// Диагностика: откройте https://ВАШ-ДОМЕН/api/telegram после деплоя.
-// Возвращаются только логические статусы; токен и ID чата не раскрываются.
-export async function onRequestGet({ env }) {
-  const tokenConfigured = Boolean(String(env.TELEGRAM_BOT_TOKEN || "").trim());
-  const chatConfigured = Boolean(String(env.TELEGRAM_CHAT_ID || "").trim());
-  return json({
-    ok: true,
-    service: "telegram-form",
-    tokenConfigured,
-    chatConfigured,
-    ready: tokenConfigured && chatConfigured,
+async function telegramGet(method, token, params = {}) {
+  const url = new URL(`https://api.telegram.org/bot${token}/${method}`);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, String(value));
+  }
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: { "Accept": "application/json" },
   });
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("telegram_unavailable");
+  }
+  return { response, data };
+}
+
+// Диагностика проверяет не только наличие переменных, но и сам токен,
+// а также доступность целевого чата. Секреты и полный ID не возвращаются.
+export async function onRequestGet({ env }) {
+  const token = String(env.TELEGRAM_BOT_TOKEN || "").trim();
+  const chatId = String(env.TELEGRAM_CHAT_ID || "").trim();
+
+  if (!token || !chatId) {
+    return json({
+      ok: false,
+      service: "telegram-form",
+      tokenConfigured: Boolean(token),
+      chatConfigured: Boolean(chatId),
+      ready: false,
+      error: "server_not_configured",
+    }, 503);
+  }
+
+  try {
+    const me = await telegramGet("getMe", token);
+    if (!me.response.ok || !me.data?.ok) {
+      const error = getTelegramErrorCode(me.response.status, me.data?.description);
+      return json({
+        ok: false,
+        service: "telegram-form",
+        tokenConfigured: true,
+        tokenValid: false,
+        chatConfigured: true,
+        chatAccessible: false,
+        ready: false,
+        error,
+      }, 502);
+    }
+
+    const chat = await telegramGet("getChat", token, { chat_id: chatId });
+    if (!chat.response.ok || !chat.data?.ok) {
+      const error = getTelegramErrorCode(chat.response.status, chat.data?.description);
+      return json({
+        ok: false,
+        service: "telegram-form",
+        tokenConfigured: true,
+        tokenValid: true,
+        chatConfigured: true,
+        chatAccessible: false,
+        ready: false,
+        error,
+      }, 502);
+    }
+
+    return json({
+      ok: true,
+      service: "telegram-form",
+      tokenConfigured: true,
+      tokenValid: true,
+      chatConfigured: true,
+      chatAccessible: true,
+      chatType: chat.data.result?.type || "unknown",
+      ready: true,
+    });
+  } catch (error) {
+    console.error("Telegram diagnostics failed", String(error?.message || error).slice(0, 100));
+    return json({
+      ok: false,
+      service: "telegram-form",
+      tokenConfigured: true,
+      chatConfigured: true,
+      ready: false,
+      error: "telegram_unavailable",
+    }, 502);
+  }
 }
 
 export async function onRequestPost({ request, env }) {
