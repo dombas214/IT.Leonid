@@ -12,7 +12,6 @@ function cleanText(value, maxLength) {
 }
 
 export async function onRequestPost({ request, env }) {
-  // Проверяем наличие токена и ID чата в настройках Cloudflare
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
     return json({ ok: false, error: "server_not_configured" }, 500);
   }
@@ -48,19 +47,17 @@ export async function onRequestPost({ request, env }) {
   ].join("\n");
 
   try {
-    // Используем переменные из env, а не подставляем ключи напрямую
     const telegramResponse = await fetch(
-      `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+      `https://api.telegram.org/bot${env.8860363912:AAF-fJ4Wx715qE8uWnmt6Ugooptd9S7b6ts}/sendMessage`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          chat_id: env.TELEGRAM_CHAT_ID, 
+          chat_id: env.6104005597, 
           text: message 
         }),
       },
     );
-    
     const telegramResult = await telegramResponse.json();
     if (!telegramResponse.ok || !telegramResult.ok) {
       return json({ ok: false, error: "telegram_delivery_failed" }, 502);
